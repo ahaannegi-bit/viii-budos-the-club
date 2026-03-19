@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  Bell,
   BookOpen,
   Briefcase,
   ChevronDown,
@@ -20,7 +21,9 @@ import {
   User,
   Vote,
 } from "lucide-react";
+import { useEffect, useState } from "react";
 import type { UserProfile } from "../backend.d";
+import { useActor } from "../hooks/useActor";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
 
 type Page =
@@ -73,6 +76,28 @@ export default function NavBar({
   const { identity, clear, loginStatus } = useInternetIdentity();
   const queryClient = useQueryClient();
   const isAuthenticated = !!identity;
+  const { actor } = useActor();
+  const [challengeCount, setChallengeCount] = useState(0);
+
+  useEffect(() => {
+    if (!isAuthenticated || !userProfile || !actor) {
+      setChallengeCount(0);
+      return;
+    }
+    const fetch = async () => {
+      try {
+        const result = await (actor as any).getPendingChallenges(
+          userProfile.username,
+        );
+        setChallengeCount((result ?? []).length);
+      } catch {
+        // silently ignore
+      }
+    };
+    fetch();
+    const interval = setInterval(fetch, 30000);
+    return () => clearInterval(interval);
+  }, [isAuthenticated, userProfile, actor]);
 
   const handleLogout = async () => {
     await clear();
@@ -139,6 +164,20 @@ export default function NavBar({
 
           {/* Auth section */}
           <div className="flex items-center gap-2">
+            {isAuthenticated && userProfile && challengeCount > 0 && (
+              <button
+                type="button"
+                onClick={() => onNavigate("games")}
+                className="relative p-1.5 rounded-md hover:bg-muted transition-colors"
+                title="You have pending game challenges"
+                data-ocid="nav.challenges.button"
+              >
+                <Bell className="w-5 h-5 text-muted-foreground" />
+                <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center leading-none">
+                  {challengeCount > 9 ? "9+" : challengeCount}
+                </span>
+              </button>
+            )}
             {isAuthenticated && userProfile ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>

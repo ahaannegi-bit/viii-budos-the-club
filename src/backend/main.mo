@@ -617,6 +617,70 @@ actor {
     };
   };
 
+  // Get the option index the caller voted for in a poll (null if not voted)
+  public query ({ caller }) func getUserVote(pollId : Nat) : async ?Nat {
+    switch (pollVotes.get(pollId)) {
+      case (?votesMap) {
+        votesMap.get(caller);
+      };
+      case (null) { null };
+    };
+  };
+
+  // Change an existing vote to a new option
+  public shared ({ caller }) func changeVote(pollId : Nat, newOptionIndex : Nat) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can vote in polls");
+    };
+    if (newOptionIndex >= 10) {
+      Runtime.trap("Invalid option index. Max options is 10");
+    };
+    switch (polls.get(pollId)) {
+      case (?poll) {
+        switch (pollVotes.get(pollId)) {
+          case (?votesMap) {
+            switch (votesMap.get(caller)) {
+              case (?oldIndex) {
+                // Remove old vote, add new vote
+                votesMap.add(caller, newOptionIndex);
+                let newVotes = Array.tabulate(
+                  poll.options.size(),
+                  func(i) {
+                    if (i == oldIndex and i != newOptionIndex) {
+                      if (poll.votes[i] > 0) { poll.votes[i] - 1 } else { 0 };
+                    } else if (i == newOptionIndex and i != oldIndex) {
+                      poll.votes[i] + 1;
+                    } else {
+                      poll.votes[i];
+                    };
+                  },
+                );
+                let updatedPoll = {
+                  id = poll.id;
+                  question = poll.question;
+                  options = poll.options;
+                  votes = newVotes;
+                  creator = poll.creator;
+                  timestamp = poll.timestamp;
+                };
+                polls.add(pollId, updatedPoll);
+              };
+              case (null) {
+                Runtime.trap("You have not voted in this poll yet");
+              };
+            };
+          };
+          case (null) {
+            Runtime.trap("Poll votes not found");
+          };
+        };
+      };
+      case (null) {
+        Runtime.trap("Poll not found");
+      };
+    };
+  };
+
   // Public: anyone can view polls
   public query func getAllPolls() : async [Poll] {
     polls.values().toArray();

@@ -15,6 +15,10 @@ export default function Footer() {
             caffeine.ai
           </a>
         </p>
+        <p className="text-xs text-muted-foreground/60">
+          Compatible with 📱 Mobile · 📟 Tablet · 💻 Laptop · 🖥️ Computer · ⌚
+          Smartwatch
+        </p>
         <p className="text-xs text-muted-foreground/50 font-mono">
           Version 1.0
         </p>

@@ -114,11 +114,35 @@ export default function HomePage({
             </motion.p>
             <motion.p
               variants={itemVariants}
-              className="text-muted-foreground max-w-lg mb-8"
+              className="text-muted-foreground max-w-lg mb-6"
             >
               Welcome to the official hub for VIIIth A BUDOS — your one-stop for
               group news, standings, and democratic elections. Stay connected,
               stay competitive!
+            </motion.p>
+            {/* Device compatibility badge */}
+            <motion.p
+              variants={itemVariants}
+              className="text-xs text-muted-foreground/70 mb-8 flex flex-wrap gap-x-2 gap-y-1 items-center"
+            >
+              <span className="font-semibold text-muted-foreground/90">
+                Works on:
+              </span>
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/8 text-muted-foreground">
+                📱 Mobile
+              </span>
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/8 text-muted-foreground">
+                📟 Tablet
+              </span>
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/8 text-muted-foreground">
+                💻 Laptop
+              </span>
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/8 text-muted-foreground">
+                🖥️ Computer
+              </span>
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/8 text-muted-foreground">
+                ⌚ Smartwatch
+              </span>
             </motion.p>
             <motion.div
               variants={itemVariants}

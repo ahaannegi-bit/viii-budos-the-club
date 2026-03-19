@@ -129,6 +129,9 @@ export default function GamesPage({
             ⚠️ You need to be logged in to play games.
           </div>
         )}
+        {isAuthenticated && userProfile && (
+          <PendingChallengesPanel username={userProfile.username} />
+        )}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {games.map((g, i) => (
             <motion.div
@@ -138,28 +141,51 @@ export default function GamesPage({
               transition={{ delay: i * 0.08 }}
             >
               <Card
-                className="overflow-hidden cursor-pointer hover:shadow-lg transition-shadow border-0 group"
-                onClick={() => {
-                  if (!isAuthenticated) {
-                    toast.error("Please log in to play games!");
-                    return;
-                  }
-                  setActiveGame(g.id);
-                }}
+                className="overflow-hidden hover:shadow-lg transition-shadow border-0 group"
                 data-ocid="games.item"
               >
-                <div
-                  className={`h-28 bg-gradient-to-br ${g.color} flex items-center justify-center text-5xl group-hover:scale-105 transition-transform duration-300`}
+                <button
+                  type="button"
+                  className={`h-28 w-full bg-gradient-to-br ${g.color} flex items-center justify-center text-5xl group-hover:scale-105 transition-transform duration-300 cursor-pointer border-0`}
+                  onClick={() => {
+                    if (!isAuthenticated) {
+                      toast.error("Please log in to play games!");
+                      return;
+                    }
+                    setActiveGame(g.id);
+                  }}
                 >
                   {g.emoji}
-                </div>
+                </button>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-lg font-display">
                     {g.title}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-muted-foreground text-sm">{g.desc}</p>
+                  <p className="text-muted-foreground text-sm mb-3">{g.desc}</p>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      className="flex-1"
+                      onClick={() => {
+                        if (!isAuthenticated) {
+                          toast.error("Please log in to play games!");
+                          return;
+                        }
+                        setActiveGame(g.id);
+                      }}
+                      data-ocid="games.primary_button"
+                    >
+                      ▶ Play
+                    </Button>
+                    {isAuthenticated && userProfile && (
+                      <ChallengeFriendButton
+                        gameName={g.title}
+                        userProfile={userProfile}
+                      />
+                    )}
+                  </div>
                 </CardContent>
               </Card>
             </motion.div>
@@ -167,6 +193,96 @@ export default function GamesPage({
         </div>
       </motion.div>
     </main>
+  );
+}
+
+// ─── Pending Challenges Panel ─────────────────────────────────────────────────
+
+interface Challenge {
+  id: bigint;
+  challengerUsername: string;
+  challengedUsername: string;
+  gameName: string;
+  timestamp: bigint;
+}
+
+function PendingChallengesPanel({ username }: { username: string }) {
+  const { actor } = useActor();
+  const [challenges, setChallenges] = useState<Challenge[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchChallenges = useCallback(async () => {
+    if (!actor) return;
+    try {
+      const result = await (actor as any).getPendingChallenges(username);
+      setChallenges(result ?? []);
+    } catch {
+      // silently ignore
+    } finally {
+      setLoading(false);
+    }
+  }, [actor, username]);
+
+  useEffect(() => {
+    fetchChallenges();
+    const interval = setInterval(fetchChallenges, 30000);
+    return () => clearInterval(interval);
+  }, [fetchChallenges]);
+
+  const handleDismiss = async (id: bigint) => {
+    if (!actor) return;
+    try {
+      await (actor as any).dismissChallenge(id);
+      await fetchChallenges();
+      toast.success("Challenge dismissed.");
+    } catch {
+      toast.error("Failed to dismiss.");
+    }
+  };
+
+  if (loading || challenges.length === 0) return null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="mb-6"
+      data-ocid="games.challenges.panel"
+    >
+      <Card className="border-primary/40 bg-primary/5">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base font-display flex items-center gap-2">
+            🤝 You have {challenges.length} pending challenge
+            {challenges.length !== 1 ? "s" : ""}!
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {challenges.map((c) => (
+            <div
+              key={c.id.toString()}
+              className="flex items-center justify-between gap-2 bg-background rounded-lg px-3 py-2 border border-border"
+            >
+              <span className="text-sm">
+                <span className="font-semibold text-primary">
+                  @{c.challengerUsername}
+                </span>{" "}
+                challenges you to{" "}
+                <span className="font-semibold">{c.gameName}</span>
+              </span>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive shrink-0"
+                onClick={() => handleDismiss(c.id)}
+                data-ocid="games.challenges.close_button"
+              >
+                ✕
+              </Button>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+    </motion.div>
   );
 }
 
@@ -1038,6 +1154,7 @@ function BattleshipGame({ onBack, userProfile }: GameProps) {
   } | null>({ len: 5, idx: 0 });
   const [shipsToPlace] = useState([5, 4, 3, 3, 2]);
   const [shipIdx, setShipIdx] = useState(0);
+  const [isHorizontal, setIsHorizontal] = useState(true);
   const [turn, setTurn] = useState<"player" | "ai">("player");
   const [winner, setWinner] = useState<"player" | "ai" | null>(null);
   const [aiMoves, setAiMoves] = useState<Set<string>>(new Set());
@@ -1054,25 +1171,52 @@ function BattleshipGame({ onBack, userProfile }: GameProps) {
     setWinner(null);
     setAiMoves(new Set());
     setMessage("");
+    setIsHorizontal(true);
   };
+
+  useEffect(() => {
+    if (phase !== "setup") return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "r" || e.key === "R") {
+        setIsHorizontal((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [phase]);
 
   const handleSetupClick = (r: number, c: number) => {
     if (!placingShip) return;
     const len = shipsToPlace[shipIdx];
-    // Place horizontally
-    if (c + len > 10) {
-      setMessage("Ship doesn't fit here! Try another spot.");
-      return;
-    }
-    const ng = playerGrid.map((row) => [...row] as CellState[]);
-    for (let i = 0; i < len; i++) {
-      if (ng[r][c + i] !== "empty") {
-        setMessage("Overlap! Choose another spot.");
+    if (isHorizontal) {
+      if (c + len > 10) {
+        setMessage("Ship doesn't fit here! Try another spot.");
         return;
       }
+      const ng = playerGrid.map((row) => [...row] as CellState[]);
+      for (let i = 0; i < len; i++) {
+        if (ng[r][c + i] !== "empty") {
+          setMessage("Overlap! Choose another spot.");
+          return;
+        }
+      }
+      for (let i = 0; i < len; i++) ng[r][c + i] = "ship";
+      setPlayerGrid(ng);
+    } else {
+      if (r + len > 10) {
+        setMessage("Ship doesn't fit here! Try another spot.");
+        return;
+      }
+      const ng = playerGrid.map((row) => [...row] as CellState[]);
+      for (let i = 0; i < len; i++) {
+        if (ng[r + i][c] !== "empty") {
+          setMessage("Overlap! Choose another spot.");
+          return;
+        }
+      }
+      for (let i = 0; i < len; i++) ng[r + i][c] = "ship";
+      setPlayerGrid(ng);
     }
-    for (let i = 0; i < len; i++) ng[r][c + i] = "ship";
-    setPlayerGrid(ng);
     setMessage("");
     const nextIdx = shipIdx + 1;
     if (nextIdx >= shipsToPlace.length) {
@@ -1160,7 +1304,14 @@ function BattleshipGame({ onBack, userProfile }: GameProps) {
         {phase === "setup" && (
           <div className="text-center">
             <p className="text-muted-foreground mb-1">
-              Place your ships (click cells horizontally)
+              Place your ships — {isHorizontal ? "Horizontal" : "Vertical"}
+            </p>
+            <p className="text-xs text-muted-foreground mb-2 font-semibold">
+              Press{" "}
+              <kbd className="px-1 py-0.5 bg-muted border border-border rounded text-xs">
+                R
+              </kbd>{" "}
+              to Rotate
             </p>
             <Badge className="mb-4">
               Placing ship of length {shipsToPlace[shipIdx]}

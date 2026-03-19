@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Calendar,
   CalendarDays,
+  CheckCircle2,
   Loader2,
   Plus,
   Trash2,
@@ -17,9 +18,10 @@ import {
   X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import type { UserProfile } from "../backend.d";
+import { useActor } from "../hooks/useActor";
 import {
   useCreatePlan,
   useCreatePoll,
@@ -57,21 +59,56 @@ function PollCard({
   isAuthenticated: boolean;
 }) {
   const voteMutation = useVoteInPoll();
+  const { actor } = useActor();
   const totalVotes = poll.votes.reduce((acc, v) => acc + Number(v), 0);
+  const [userVote, setUserVote] = useState<bigint | null>(null);
+  const [isChanging, setIsChanging] = useState(false);
+
+  useEffect(() => {
+    if (!isAuthenticated || !actor) return;
+    (actor as any)
+      .getUserVote(poll.id)
+      .then((result: [bigint] | []) => {
+        setUserVote(result.length > 0 ? (result[0] as bigint) : null);
+      })
+      .catch(() => {});
+  }, [isAuthenticated, actor, poll.id]);
 
   const handleVote = async (index: number) => {
     if (!isAuthenticated) {
       toast.error("Login to vote!");
       return;
     }
+    if (!actor) return;
+
+    const newOptionIndex = BigInt(index);
+
+    if (userVote !== null && userVote === newOptionIndex) {
+      // Clicking same option — no action needed
+      toast("You already voted for this option.");
+      return;
+    }
+
+    setIsChanging(true);
     try {
-      await voteMutation.mutateAsync({
-        pollId: poll.id,
-        optionIndex: BigInt(index),
-      });
-      toast.success("Vote cast!");
+      if (userVote !== null) {
+        // Change existing vote
+        await (actor as any).changeVote(poll.id, newOptionIndex);
+        setUserVote(newOptionIndex);
+        toast.success("Vote changed! ✅");
+      } else {
+        // Cast new vote
+        await voteMutation.mutateAsync({
+          pollId: poll.id,
+          optionIndex: newOptionIndex,
+        });
+        setUserVote(newOptionIndex);
+        toast.success("Vote cast! ✅");
+      }
     } catch {
-      toast.error("Failed to vote. You may have already voted.");
+      toast.error("Failed to vote. Please try again.");
+    } finally {
+      setIsChanging(false);
     }
   };
 
@@ -88,6 +125,11 @@ function PollCard({
           <span className="text-xs text-muted-foreground">
             {formatDate(poll.timestamp)}
           </span>
+          {userVote !== null && (
+            <Badge className="text-xs gap-1 bg-primary/10 text-primary border-primary/30">
+              <CheckCircle2 className="w-3 h-3" /> Voted
+            </Badge>
+          )}
         </div>
       </CardHeader>
       <CardContent className="space-y-2">
@@ -95,26 +137,50 @@ function PollCard({
           const voteCount = Number(poll.votes[i] ?? BigInt(0));
           const pct =
             totalVotes > 0 ? Math.round((voteCount / totalVotes) * 100) : 0;
+          const isMyVote = userVote !== null && userVote === BigInt(i);
           return (
             <button
               // biome-ignore lint/suspicious/noArrayIndexKey: poll options are stable by index
               key={i}
               type="button"
               onClick={() => handleVote(i)}
-              disabled={voteMutation.isPending}
-              className="w-full text-left group"
+              disabled={isChanging || voteMutation.isPending}
+              className={`w-full text-left group rounded-lg transition-all ${
+                isMyVote
+                  ? "ring-2 ring-primary ring-offset-1 ring-offset-background"
+                  : "hover:bg-muted/40"
+              }`}
               data-ocid="polls.option.button"
             >
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-sm font-medium group-hover:text-primary transition-colors">
+              <div className="flex items-center justify-between mb-1 px-2 pt-2">
+                <span
+                  className={`text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                    isMyVote
+                      ? "text-primary font-semibold"
+                      : "group-hover:text-primary"
+                  }`}
+                >
+                  {isMyVote && (
+                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                  )}
                   {option}
                 </span>
                 <span className="text-xs text-muted-foreground">{pct}%</span>
               </div>
-              <Progress value={pct} className="h-2" />
+              <div className="px-2 pb-2">
+                <Progress
+                  value={pct}
+                  className={`h-2 ${isMyVote ? "[&>div]:bg-primary" : ""}`}
+                />
+              </div>
             </button>
           );
         })}
+        {isAuthenticated && userVote !== null && (
+          <p className="text-xs text-muted-foreground pt-1 text-center">
+            Click a different option to change your vote
+          </p>
+        )}
       </CardContent>
     </Card>
   );
